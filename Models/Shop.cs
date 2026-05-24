@@ -16,11 +16,11 @@ namespace CrucianGame.Models
         {
             AvailableHats = new List<Hat>
             {
-                new Hat("Кепка", 300, 3.0, "assets/hat_cap.png"),
-                new Hat("Соломенная шляпа", 3000, 4.0, "assets/hat_straw.png"),
-                new Hat("Цилиндр", 30000, 6.0, "assets/hat_tophat.png"),
-                new Hat("Корона", 300000, 10.0, "assets/hat_crown.png"),
-                new Hat("Каска", 3000000, 16.0, "assets/hat_helmet.png")
+                new Hat("Кепка", 100, 6.0, "assets/hat_cap.png"),
+                new Hat("Соломенная шляпа", 3000, 8.0, "assets/hat_straw.png"),
+                new Hat("Цилиндр", 30000, 12.0, "assets/hat_tophat.png"),
+                new Hat("Корона", 300000, 20.0, "assets/hat_crown.png"),
+                new Hat("Каска", 3000000, 32.0, "assets/hat_helmet.png")
             };
         }
 
