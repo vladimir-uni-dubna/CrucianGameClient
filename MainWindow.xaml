@@ -76,6 +76,14 @@
                     <TextBlock Text=" червячков" FontSize="16" Foreground="#90CAF9"
                                VerticalAlignment="Center" Margin="3,0,0,0"/>
                 </StackPanel>
+
+                <!-- Кнопка таблицы лидеров -->
+                <Button x:Name="LeaderboardButton" Grid.Column="2"
+                        Content="Топ 20" FontSize="13" FontWeight="Bold"
+                        Background="#FFD700" Foreground="#1565C0"
+                        BorderThickness="0" Cursor="Hand" Padding="10,5"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Click="OnLeaderboardClick"/>
             </Grid>
         </Border>
 
@@ -111,8 +119,9 @@
                        Foreground="#64B5F6" HorizontalAlignment="Center" Margin="0,5,0,0"/>
         </Grid>
 
-        <!-- ========== МАГАЗИН ШЛЯП ========== -->
-        <Border Grid.Row="2" Background="White" Padding="15,10" BorderBrush="#ccc" BorderThickness="0,1,0,0">
+        <!-- ========== МАГАЗИН ШЛЯП (скрыт по умолчанию) ========== -->
+        <Border x:Name="ShopBorder" Grid.Row="2" Background="White" Padding="15,10"
+                BorderBrush="#ccc" BorderThickness="0,1,0,0" Visibility="Collapsed">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -130,12 +139,23 @@
             </Grid>
         </Border>
 
-        <!-- ========== СТАТИСТИКА ========== -->
+        <!-- ========== НИЖНЯЯ ПАНЕЛЬ: СТАТИСТИКА + КНОПКА МАГАЗИНА ========== -->
         <Border Grid.Row="3" Background="#BBDEFB" Padding="15,8">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                <TextBlock Text="Всего кликов: " FontSize="13" Foreground="#555"/>
-                <TextBlock x:Name="TotalClicksText" Text="0" FontSize="13" FontWeight="Bold" Foreground="#333"/>
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Text="Всего кликов: " FontSize="13" Foreground="#555"/>
+                    <TextBlock x:Name="TotalClicksText" Text="0" FontSize="13" FontWeight="Bold" Foreground="#333"/>
+                </StackPanel>
+                <Button x:Name="ShopToggleButton" Grid.Column="1"
+                        Content="Магазин" FontSize="12" FontWeight="Bold"
+                        Background="#1565C0" Foreground="White"
+                        BorderThickness="0" Cursor="Hand" Padding="12,5"
+                        Click="OnShopToggleClick"/>
+            </Grid>
         </Border>
     </Grid>
 </Window>

@@ -1,12 +1,15 @@
 using System;
-using System.Collections.Generic;
+using System.Threading.Tasks;
+using System.Timers;
 using CrucianGame.Save;
+using CrucianGame.Services;
+using Timer = System.Timers.Timer;
 
 namespace CrucianGame.Models
 {
     /// <summary>
     /// Главный класс, управляющий игровой логикой.
-    /// Связывает модель (Crucian, Shop) с интерфейсом.
+    /// Связывает модель (Crucian, Shop) с интерфейсом и сервером.
     /// </summary>
     public class GameManager
     {
@@ -19,6 +22,26 @@ namespace CrucianGame.Models
         /// Магазин шляп
         /// </summary>
         public Shop Shop { get; private set; }
+
+        /// <summary>
+        /// Клиент для общения с сервером
+        /// </summary>
+        public ApiClient ApiClient { get; private set; }
+
+        /// <summary>
+        /// Менеджер сохранений
+        /// </summary>
+        private SaveManager _saveManager;
+
+        /// <summary>
+        /// Таймер автосохранения (30 секунд)
+        /// </summary>
+        private Timer _autoSaveTimer;
+
+        /// <summary>
+        /// Флаг — были ли изменения с последнего сохранения
+        /// </summary>
+        private bool _hasUnsavedChanges;
 
         /// <summary>
         /// Событие: обновилась валюта
@@ -40,66 +63,69 @@ namespace CrucianGame.Models
         /// </summary>
         public event Action<long>? OnTotalClicksChanged;
 
-        public GameManager()
+        /// <summary>
+        /// Событие: ошибка сохранения
+        /// </summary>
+        public event Action<string>? OnSaveError;
+
+        public GameManager(ApiClient apiClient)
         {
+            ApiClient = apiClient;
             Shop = new Shop();
             Crucian = new Crucian();
+            _saveManager = new SaveManager(apiClient);
+
+            // Запускаем таймер автосохранения каждые 30 секунд
+            _autoSaveTimer = new Timer(30000);
+            _autoSaveTimer.Elapsed += async (sender, args) =>
+            {
+                try { await AutoSave(); }
+                catch { /* игнорируем ошибки автосохранения */ }
+            };
+            _autoSaveTimer.AutoReset = true;
+            _autoSaveTimer.Start();
         }
 
         /// <summary>
         /// Загрузить сохранение или начать новую игру
         /// </summary>
-        public void StartNewOrLoadGame()
+        public async Task StartNewOrLoadGame()
         {
-            SaveManager.SaveData? data = SaveManager.Load();
+            bool loaded = await _saveManager.Load(Crucian);
 
-            if (data != null)
+            if (!loaded)
             {
-                // Загружаем сохранённые данные
-                Crucian.Currency = data.Currency;
-                Crucian.CurrentRankIndex = data.CurrentRankIndex;
-                Crucian.TotalClicks = data.TotalClicks;
-                Crucian.PurchasedHatIndices = data.PurchasedHatIndices ?? new List<int>();
-
-                // Восстанавливаем надетую шляпу
-                if (data.EquippedHatIndex >= 0 && data.EquippedHatIndex < Shop.AvailableHats.Count)
-                {
-                    Crucian.EquippedHat = Shop.AvailableHats[data.EquippedHatIndex];
-                }
+                Crucian = new Crucian();
             }
-            // Если сохранения нет — начинаем с начальными значениями (уже установлены в конструкторе)
 
-            // Оповещаем интерфейс
             OnCurrencyChanged?.Invoke(Crucian.Currency);
             OnTotalClicksChanged?.Invoke(Crucian.TotalClicks);
             OnRankUp?.Invoke(Crucian.CurrentRank);
             OnHatChanged?.Invoke();
+
+            _hasUnsavedChanges = false;
         }
 
         /// <summary>
-        /// Обработать клик по карасю
+        /// Обработать клик по карасю (синхронно, без ожидания сохранения)
         /// </summary>
         public void HandleClick()
         {
-            long earned = Crucian.Click();
+            Crucian.Click();
 
-            // Проверяем повышение звания
-            bool rankedUp = Crucian.TryRankUp();
-            if (rankedUp)
+            if (Crucian.TryRankUp())
             {
                 OnRankUp?.Invoke(Crucian.CurrentRank);
+                _ = SaveGame(); // fire-and-forget
             }
 
-            // Оповещаем интерфейс
             OnCurrencyChanged?.Invoke(Crucian.Currency);
             OnTotalClicksChanged?.Invoke(Crucian.TotalClicks);
-
-            // Автосохранение после каждого действия
-            SaveGame();
+            _hasUnsavedChanges = true;
         }
 
         /// <summary>
-        /// Купить шляпу
+        /// Купить шляпу (синхронно, без ожидания сохранения)
         /// </summary>
         public bool BuyHat(int hatIndex)
         {
@@ -111,20 +137,19 @@ namespace CrucianGame.Models
             {
                 OnCurrencyChanged?.Invoke(Crucian.Currency);
                 OnHatChanged?.Invoke();
-                SaveGame();
+                _ = SaveGame(); // fire-and-forget
             }
             return success;
         }
 
         /// <summary>
-        /// Надеть шляпу
+        /// Надеть шляпу (синхронно, без ожидания сохранения)
         /// </summary>
         public void EquipHat(int hatIndex)
         {
             Hat? hat = Shop.GetHatByIndex(hatIndex);
             if (hat == null) return;
 
-            // Если эта шляпа уже надета — снимаем её
             if (Crucian.EquippedHat == hat)
             {
                 Crucian.EquippedHat = null;
@@ -135,15 +160,43 @@ namespace CrucianGame.Models
             }
 
             OnHatChanged?.Invoke();
-            SaveGame();
+            _ = SaveGame(); // fire-and-forget
         }
 
         /// <summary>
-        /// Сохранить игру
+        /// Сохранить игру на сервер
         /// </summary>
-        public void SaveGame()
+        public async Task SaveGame()
         {
-            SaveManager.Save(Crucian);
+            bool success = await _saveManager.Save(Crucian);
+            if (success)
+            {
+                _hasUnsavedChanges = false;
+            }
+            else
+            {
+                OnSaveError?.Invoke("Не удалось сохранить прогресс");
+            }
+        }
+
+        /// <summary>
+        /// Автосохранение по таймеру
+        /// </summary>
+        private async Task AutoSave()
+        {
+            if (_hasUnsavedChanges)
+            {
+                await SaveGame();
+            }
+        }
+
+        /// <summary>
+        /// Сохранить при закрытии игры
+        /// </summary>
+        public async Task SaveOnExit()
+        {
+            _autoSaveTimer.Stop();
+            await SaveGame();
         }
     }
 }

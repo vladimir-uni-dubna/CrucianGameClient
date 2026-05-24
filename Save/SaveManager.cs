@@ -1,70 +1,74 @@
 using System.Collections.Generic;
-using System.IO;
-using System.Text.Json;
+using System.Threading.Tasks;
 using CrucianGame.Models;
+using CrucianGame.Services;
 
 namespace CrucianGame.Save
 {
     /// <summary>
-    /// Класс для сохранения и загрузки прогресса игры в JSON
+    /// Класс для сохранения и загрузки прогресса игры через сервер
     /// </summary>
     public class SaveManager
     {
-        /// <summary>
-        /// Структура данных для сериализации в JSON
-        /// </summary>
-        public class SaveData
+        private readonly ApiClient _apiClient;
+
+        public SaveManager(ApiClient apiClient)
         {
-            public long Currency { get; set; }
-            public int CurrentRankIndex { get; set; }
-            public long TotalClicks { get; set; }
-            public List<int> PurchasedHatIndices { get; set; } = new List<int>();
-            public int EquippedHatIndex { get; set; } = -1; // -1 означает, что шляпа не надета
+            _apiClient = apiClient;
         }
 
         /// <summary>
-        /// Путь к файлу сохранения (рядом с .exe)
+        /// Сохранить прогресс игры на сервер
         /// </summary>
-        private static string SavePath => Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "save.json");
-
-        /// <summary>
-        /// Сохранить прогресс игры в JSON-файл
-        /// </summary>
-        public static void Save(Crucian crucian)
+        public async Task<bool> Save(Crucian crucian)
         {
-            var data = new SaveData
-            {
-                Currency = crucian.Currency,
-                CurrentRankIndex = crucian.CurrentRankIndex,
-                TotalClicks = crucian.TotalClicks,
-                PurchasedHatIndices = crucian.PurchasedHatIndices,
-                EquippedHatIndex = -1
-            };
-
             // Определяем индекс надетой шляпы
+            int equippedHatIndex = -1;
             if (crucian.EquippedHat != null)
             {
                 var shop = new Shop();
                 int idx = shop.AvailableHats.IndexOf(crucian.EquippedHat);
-                data.EquippedHatIndex = idx;
+                equippedHatIndex = idx;
             }
 
-            string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(SavePath, json);
+            return await _apiClient.SaveUserData(
+                crucian.Currency,
+                crucian.CurrentRankIndex,
+                crucian.TotalClicks,
+                crucian.PurchasedHatIndices,
+                equippedHatIndex
+            );
         }
 
         /// <summary>
-        /// Загрузить прогресс игры из JSON-файла.
-        /// Возвращает SaveData или null, если файла нет.
+        /// Загрузить прогресс игры с сервера
+        /// Возвращает true, если данные загружены
         /// </summary>
-        public static SaveData? Load()
+        public async Task<bool> Load(Crucian crucian)
         {
-            if (!File.Exists(SavePath))
-                return null;
+            UserDataResult data = await _apiClient.LoadUserData();
 
-            string json = File.ReadAllText(SavePath);
-            return JsonSerializer.Deserialize<SaveData>(json);
+            if (data == null || !data.Success)
+                return false;
+
+            // Загружаем данные из ответа сервера
+            crucian.Currency = data.Currency;
+            crucian.CurrentRankIndex = data.CurrentRankIndex;
+            crucian.TotalClicks = data.TotalClicks;
+            crucian.PurchasedHatIndices = data.PurchasedHatIndices ?? new List<int>();
+
+            // Восстанавливаем надетую шляпу
+            var shop = new Shop();
+            if (data.EquippedHatIndex >= 0 && data.EquippedHatIndex < shop.AvailableHats.Count)
+            {
+                crucian.EquippedHat = shop.AvailableHats[data.EquippedHatIndex];
+            }
+            else
+            {
+                crucian.EquippedHat = null;
+            }
+
+            return true;
         }
     }
 }

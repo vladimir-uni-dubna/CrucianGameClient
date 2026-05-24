@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using CrucianGame.Models;
+using CrucianGame.Services;
 
 namespace CrucianGame
 {
@@ -19,24 +19,73 @@ namespace CrucianGame
         /// </summary>
         private GameManager _gameManager;
 
-        public MainWindow()
+        public MainWindow(ApiClient apiClient)
         {
             InitializeComponent();
 
-            // Создаём игровой менеджер
-            _gameManager = new GameManager();
+            // Создаём игровой менеджер с API-клиентом
+            _gameManager = new GameManager(apiClient);
 
             // Подписываемся на события менеджера
             _gameManager.OnCurrencyChanged += UpdateCurrencyDisplay;
             _gameManager.OnRankUp += UpdateRankDisplay;
             _gameManager.OnHatChanged += UpdateHatDisplay;
             _gameManager.OnTotalClicksChanged += UpdateTotalClicksDisplay;
+            _gameManager.OnSaveError += OnSaveError;
 
             // Строим интерфейс магазина
             BuildShopUI();
 
-            // Загружаем сохранение или начинаем новую игру
-            _gameManager.StartNewOrLoadGame();
+            // Загружаем данные после полной загрузки окна
+            Loaded += (s, e) =>
+            {
+                _ = _gameManager.StartNewOrLoadGame();
+            };
+
+            // Подписываемся на закрытие окна
+            Closing += OnWindowClosing;
+        }
+
+        private bool _isShopOpen;
+
+        /// <summary>
+        /// Обработчик нажатия на кнопку таблицы лидеров
+        /// </summary>
+        private void OnLeaderboardClick(object sender, RoutedEventArgs e)
+        {
+            var leaderboardWindow = new LeaderboardWindow(_gameManager.ApiClient);
+            leaderboardWindow.Owner = this;
+            leaderboardWindow.ShowDialog();
+        }
+
+        /// <summary>
+        /// Обработчик нажатия на кнопку магазина — показать/скрыть
+        /// </summary>
+        private void OnShopToggleClick(object sender, RoutedEventArgs e)
+        {
+            _isShopOpen = !_isShopOpen;
+            ShopBorder.Visibility = _isShopOpen ? Visibility.Visible : Visibility.Collapsed;
+            ShopToggleButton.Content = _isShopOpen ? "Закрыть" : "Магазин";
+        }
+
+        /// <summary>
+        /// Обработчик закрытия окна — сохраняем прогресс и завершаем приложение
+        /// </summary>
+        private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            await _gameManager.SaveOnExit();
+            Application.Current.Shutdown();
+        }
+
+        /// <summary>
+        /// Обработчик ошибки сохранения
+        /// </summary>
+        private void OnSaveError(string message)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                ShowFloatingText(message, Brushes.Red);
+            });
         }
 
         /// <summary>
@@ -49,7 +98,7 @@ namespace CrucianGame
             for (int i = 0; i < _gameManager.Shop.AvailableHats.Count; i++)
             {
                 Hat hat = _gameManager.Shop.AvailableHats[i];
-                int index = i; // копируем для замыкания
+                int index = i;
 
                 // Рамка для каждой шляпы
                 Border border = new Border
@@ -58,7 +107,7 @@ namespace CrucianGame
                     Width = 130
                 };
 
-                // Вертикальный контейнер: картинка, название, цена, кнопка
+                // Вертикальный контейнер: картинка, название, цена, множитель, кнопка
                 StackPanel stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
 
                 // Изображение шляпы
@@ -179,21 +228,16 @@ namespace CrucianGame
 
             if (isEquipped)
             {
-                // Если шляпа уже надета — снимаем её
                 _gameManager.EquipHat(hatIndex);
             }
             else if (isPurchased)
             {
-                // Если куплена, но не надета — надеваем
                 _gameManager.EquipHat(hatIndex);
             }
             else
             {
-                // Пытаемся купить
-                bool bought = _gameManager.BuyHat(hatIndex);
-                if (!bought)
+                if (!_gameManager.BuyHat(hatIndex))
                 {
-                    // Не хватает денег
                     ShowFloatingText("Не хватает червячков!", Brushes.Red);
                 }
             }
@@ -229,7 +273,6 @@ namespace CrucianGame
         /// </summary>
         private void ShowFloatingText(string text, Brush color)
         {
-            // Берём главный контейнер и добавляем текст на 1.5 секунды
             TextBlock floatingText = new TextBlock
             {
                 Text = text,
@@ -240,12 +283,10 @@ namespace CrucianGame
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // Добавляем поверх сетки
             if (Content is Grid mainGrid)
             {
                 mainGrid.Children.Add(floatingText);
 
-                // Анимация появления и исчезновения
                 var opacityAnimation = new DoubleAnimation
                 {
                     From = 1.0,
