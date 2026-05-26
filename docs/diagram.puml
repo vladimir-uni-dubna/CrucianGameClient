@@ -1,0 +1,161 @@
+@startuml
+' CrucianGame class diagram
+
+skinparam class {
+    BackgroundColor #E3F2FD
+    BorderColor #1565C0
+    ArrowColor #1565C0
+}
+
+package "Models" {
+    class Rank {
+        + Name : string
+        + ClicksPerHit : int
+        + RequiredCurrency : long
+        + {static} GetAllRanks() : List<Rank>
+    }
+
+    class Crucian {
+        + Currency : long
+        + CurrentRankIndex : int
+        + TotalClicks : long
+        + EquippedHat : Hat?
+        + PurchasedHatIndices : List<int>
+        + {readonly} CurrentRank : Rank
+        + {readonly} MaxRankIndex : int
+        + Click() : long
+        + TryRankUp() : bool
+    }
+
+    class Hat {
+        + Name : string
+        + Price : long
+        + Multiplier : double
+        + ImagePath : string
+    }
+
+    class Shop {
+        + AvailableHats : List<Hat>
+        + TryBuy(Hat, Crucian) : bool
+        + Equip(Hat, Crucian) : void
+        + GetHatByIndex(int) : Hat?
+    }
+
+    class GameManager {
+        + Crucian : Crucian
+        + Shop : Shop
+        + ApiClient : ApiClient
+        - _saveManager : SaveManager
+        - _autoSaveTimer : Timer
+        - _hasUnsavedChanges : bool
+        + {event} OnCurrencyChanged : Action<long>
+        + {event} OnRankUp : Action<Rank>
+        + {event} OnHatChanged : Action
+        + {event} OnTotalClicksChanged : Action<long>
+        + {event} OnSaveError : Action<string>
+        + HandleClick() : void
+        + BuyHat(int) : bool
+        + EquipHat(int) : void
+        + SaveGame() : Task
+        + SaveOnExit() : Task
+        + StartNewOrLoadGame() : Task
+    }
+}
+
+package "Services" {
+    class ApiClient {
+        - {static} BaseUrl : string
+        - _httpClient : HttpClient
+        + Token : string?
+        + CurrentUser : string?
+        + Register(string, string) : Task<AuthResult>
+        + Login(string, string) : Task<AuthResult>
+        + LoadUserData() : Task<UserDataResult>
+        + SaveUserData(long, int, long, List<int>, int) : Task<bool>
+        + GetLeaderboard() : Task<LeaderboardResult>
+    }
+
+    class AuthResult {
+        + Success : bool
+        + Message : string?
+        + Token : string?
+    }
+
+    class UserDataResult {
+        + Success : bool
+        + Message : string?
+        + Username : string?
+        + Currency : long
+        + CurrentRankIndex : int
+        + TotalClicks : long
+        + PurchasedHatIndices : List<int>?
+        + EquippedHatIndex : int
+    }
+
+    class LeaderboardResult {
+        + Success : bool
+        + Message : string?
+        + Leaderboard : List<LeaderboardEntry>?
+    }
+
+    class LeaderboardEntry {
+        + Rank : int
+        + Username : string?
+        + Currency : long
+        + CurrentRankIndex : int
+    }
+}
+
+package "Save" {
+    class SaveManager {
+        - _apiClient : ApiClient
+        + Save(Crucian) : Task<bool>
+        + Load(Crucian) : Task<bool>
+    }
+}
+
+package "WPF UI" {
+    class App {
+        + OnStartup(StartupEventArgs) : void
+    }
+
+    class AuthWindow {
+        + ApiClient : ApiClient
+        - _isRegisterMode : bool
+    }
+
+    class MainWindow {
+        - _gameManager : GameManager
+        - _isShopOpen : bool
+    }
+
+    class LeaderboardWindow {
+        - _apiClient : ApiClient
+        - _ranks : Rank[]
+    }
+}
+
+' ---- Relationships ----
+
+GameManager *-- Crucian : owns
+GameManager *-- Shop : owns
+GameManager *-- SaveManager : owns
+GameManager o-- ApiClient : uses
+GameManager ..> Rank : fires events with
+
+Shop *-- Hat : contains (5)
+Crucian o-- Hat : may equip (0..1)
+Crucian ..> Rank : current rank by index
+Crucian ..> Hat : purchased hats
+
+SaveManager o-- ApiClient : delegates HTTP
+
+AuthWindow o-- ApiClient : creates and holds
+MainWindow *-- GameManager : creates and owns
+LeaderboardWindow o-- ApiClient : uses for GET
+
+App ..> AuthWindow : opens modal
+App ..> MainWindow : opens on success
+MainWindow ..> LeaderboardWindow : opens on button
+
+@enduml
